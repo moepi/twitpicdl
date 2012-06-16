@@ -1,9 +1,9 @@
 #!/bin/bash
-SHIFT=0
 VERBOSE=0
 filename="`basename $0`"
 BASENAME="${filename%.*}"
 WGETBIN="`which wget`"
+PARALLEL=0
 usage()
 {
 cat << EOF
@@ -15,6 +15,7 @@ OPTIONS:
 	-h	Show this message
 	-o	Specifies the output path
 	-l	Specifies a logfile (default:./$BASENAME.log)
+	-p	Parallel download of images
 	-v	Be verbose
 EOF
 }
@@ -25,7 +26,7 @@ function logger {
 	[ $VERBOSE -eq 1 ] && echo $LOGLINE
 }
 
-while getopts “hvo:l:” OPTION
+while getopts “hvo:l:p” OPTION
 do
 	case $OPTION in
 	h)
@@ -34,15 +35,15 @@ do
 		;;
 	o)
 		OUTPUTPATH=$OPTARG
-		SHIFT=$(($SHIFT + 2))
 		;;
 	v)
 		VERBOSE=1
-		SHIFT=$(($SHIFT + 1))
+		;;
+	p)
+		PARALLEL=1
 		;;
 	l)
 		LOGFILE=$OPTARG
-		SHIFT=$(($SHIFT + 2))
 		;;
 	?)
 		usage
@@ -51,18 +52,28 @@ do
 	esac
 done
 
-shift $SHIFT
+shift $((OPTIND-1))
 
 [[ -z $OUTPUTPATH ]] && OUTPUTPATH="`pwd`"
 [[ -z $LOGFILE ]] && LOGFILE="$BASENAME.log"
 
 URL="http://api.twitpic.com/2/users/show.json?username=$1"
-LIST="`$WGETBIN -q -O- $URL | grep -o '\"short_id\":\"[0-9a-Z]*\"' | awk -F'":"' '{print $2}' | tr '" ' '\n'`"
-
-logger "found `echo $LIST | wc -w` images"
-counter=1
-for i in $LIST; do
-	logger "downloading image #$counter id:$i"
-	$WGETBIN -q -O $OUTPUTPATH/$i.jpg http://twitpic.com/show/full/$i
-	counter=$(($counter + 1))
+PHOTOCOUNT=`$WGETBIN -q -O- $URL | sed 's/.*photo_only_count\":\([0-9]*\).*/\1/'`
+PAGES=$(($PHOTOCOUNT/20))
+logger "found $PHOTOCOUNT images"
+for p in `seq 1 $PAGES`; do
+	PURL="${URL}&page=$p"
+	echo $PURL
+	LIST="`$WGETBIN -q -O- $PURL | grep -o '\"short_id\":\"[0-9a-Z]*\"' | awk -F'":"' '{print $2}' | tr '" ' '\n'`"
+	
+	counter=1
+	for i in $LIST; do
+		logger "downloading image id:$i"
+		if [[ $PARALLEL -eq 0 ]]; then
+			$WGETBIN -q -O $OUTPUTPATH/$i.jpg http://twitpic.com/show/full/$i
+		else
+			$WGETBIN -q -O $OUTPUTPATH/$i.jpg http://twitpic.com/show/full/$i &
+		fi
+		counter=$(($counter + 1))
+	done
 done
