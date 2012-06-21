@@ -4,6 +4,7 @@ filename="`basename $0`"
 BASENAME="${filename%.*}"
 WGETBIN="`which wget`"
 PARALLEL=0
+LOGGING=1
 CREATEFOLDER=0
 MAXRETRIES=5
 TIMEOUT=10
@@ -16,8 +17,9 @@ This script downloads all twitpics for a specified account.
 
 OPTIONS:
 	-h	Show this message
-	-o	Specifies the output path
+	-o	Specifies the output path (default:./)
 	-l	Specifies a logfile (default:./$BASENAME.log)
+	-L	Disables logging to file
 	-p	Parallel download of images
 	-r	Number of retries of each download process (default: $MAXRETRIES)
 	-t	Timeout of each download process in seconds (default: $TIMEOUT)
@@ -29,11 +31,11 @@ exit 5
 
 function logger {
 	LOGLINE="`date +%Y-%m-%d_%H:%M:%S` [$$] - $@"
-	echo $LOGLINE >> $LOGFILE
+	[ $LOGGING -eq 1 ] &&echo $LOGLINE >> $LOGFILE
 	[ $VERBOSE -eq 1 ] && echo $LOGLINE
 }
 
-while getopts "hvo:l:pcr" OPTION
+while getopts "hvo:l:pcrL" OPTION
 do
 	case $OPTION in
 	h)
@@ -44,6 +46,9 @@ do
 		;;
 	c)
 		CREATEFOLDER=1
+		;;
+	L)
+		LOGGING=0
 		;;
 	v)
 		VERBOSE=1
@@ -78,7 +83,7 @@ for u in $@; do
 
 	for t in `seq 0 $MAXRETRIES`; do
 		PHOTOCOUNT=`$WGETBIN -T$TIMEOUT -qO- $URL | sed 's/.*photo_only_count\":\([0-9]*\).*/\1/'`
-		[[ -n $PHOTOCOUNT ]] && break || logger "twitpic API seems to have given random 403 Forbidden, remaining retries:$(($MAXRETRIES - $t))"
+		[[ -n $PHOTOCOUNT ]] && break || logger "getting image count failed, remaining retries:$(($MAXRETRIES - $t))"
 	done
 
 	PAGES=$((PHOTOCOUNT/20))
@@ -91,7 +96,7 @@ for u in $@; do
 			LIST="`$WGETBIN -T$TIMEOUT -qO- $PURL | grep -o '\"short_id\":\"[0-9a-Z]*\"' | awk -F'":"' '{print $2}' | tr '" ' '\n' | grep -v ^$`"
 			[[ -n $LIST ]] && break
 			[[ $t -ge $MAXRETRIES ]] && logger "Reached maximum retries" && break
-			logger "twitpic API seems to have given random 403 Forbidden for page $p, remaining retries:$(($MAXRETRIES - $t))"
+			logger "loading images of page $p failed, remaining retries:$(($MAXRETRIES - $t))"
 			
 		done
 		
